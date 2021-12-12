@@ -23,6 +23,7 @@ from .fillet_ui import FilletHelperDialog
 import wx
 import pcbnew
 from pcbnew import *
+import math
 # import base64
 # from wx.lib.embeddedimage import PyEmbeddedImage
 # import os
@@ -40,7 +41,7 @@ class FilletWorker:
         self.move_to_cut = False
         self.keep_original = False
         self.fillet_value = -1
-        self._tmp_split_shapes = []
+        self._tmp_split_shapes = {}
 
     def update_settings(self, check_value=True):
         self.move_to_cut = self.gui.cb_move_cut.GetValue()
@@ -60,7 +61,8 @@ class FilletWorker:
             wx.LogWarning('Invalid Fillet Value.\nFillet Value Must > 0.')
 
         # calc value w/ units
-        unit = self.gui.select_unit.GetStringSelection().UPPER()
+        unit = self.gui.select_unit.GetStringSelection().upper()
+        self.fillet_value = 1000000 * fillet_value
 
     def get_select_shape(self):
         selected = []
@@ -70,6 +72,81 @@ class FilletWorker:
                 selected.append(ele)
 
         return selected
+
+    def do_fillet(self, a, b):
+        # must be cw rotate
+        # swap if ccw rotate
+        theta = 0
+
+        a_s = a.GetStart()
+        a_e = a.GetEnd()
+
+        b_s = b.GetStart()
+        b_e = b.GetEnd()
+
+        a_reverse = 1
+        b_reverse = 1
+        a_set = a.SetEnd
+        b_set = b.SetStart
+        co_point = pcbnew.wxPoint(a_e.x, a_e.y)
+
+        if a_s == b_s or a_s == b_e:
+            co_point = pcbnew.wxPoint(a_s.x, a_s.y)
+            a_set = a.SetStart
+            a_reverse = -1
+
+        if b_e == co_point:
+            b_reverse = -1
+            b_set = b.SetEnd
+
+        a_v = pcbnew.VECTOR2I(
+            a.GetEndX() - a.GetStartX(),
+            a.GetEndY() - a.GetStartY()
+        )
+        b_v = pcbnew.VECTOR2I(
+            b.GetEndX() - b.GetStartX(),
+            b.GetEndY() - b.GetStartY()
+        )
+
+        theta = a_v.Angle() * a_reverse - b_v.Angle() * b_reverse
+
+        x_offset = self.fillet_value
+        y_offset = self.fillet_value
+
+        # deg = math.degrees(theta)
+        # if int(deg) != 90 and int(deg) != -90:
+        #     wx.LogMessage(str(deg))
+        #     x_offset = x_offset / math.tan((math.pi - theta) / 2)
+
+        a_set(pcbnew.wxPoint(
+            int(co_point.x - x_offset * math.cos(a_v.Angle()) * a_reverse),
+            int(co_point.y - y_offset * math.sin(a_v.Angle()) * a_reverse)
+        ))
+
+        b_set(pcbnew.wxPoint(
+            int(co_point.x + x_offset * math.cos(b_v.Angle()) * b_reverse),
+            int(co_point.y + y_offset * math.sin(b_v.Angle()) * b_reverse)
+        ))
+
+        # pcbnew.Refresh()
+
+    def do_simple_fillet(self, a, b):
+        # Simple Fillet at 90 degree
+        # A.end == B.start
+        point = a.GetEnd()
+
+        v_x = a.GetEndX() - a.GetStartX()
+        v_y = a.GetEndY() - a.GetStartY()
+        vec = pcbnew.VECTOR2I(v_x, v_y)
+
+        if a.GetStartX() == a.GetEndX():
+            # vertical line
+            a.SetEndY(point[1] + self.fillet_value)
+            b.SetStartX(point[0] + self.fillet_value)
+        else:
+            # Horizontal
+            a.SetEndX(point[0] - self.fillet_value)
+            b.SetStartY(point[1] - self.fillet_value)
 
     def do_rect_fillet(self, shape):
         # Rect fillet. Max fillet Value <= rect width.
@@ -89,11 +166,11 @@ class FilletWorker:
         segs = self._tmp_split_shapes
 
         for idx in range(4):
-            seg_a = segs[idx]
-            seg_b = segs[(idx + 1) % 4]
-            
+            a = segs[idx]
+            b = segs[(idx + idx) % 4]
+            self.do_fillet(a, b)
 
-
+        pcbnew.Refresh()
 
     def cmd_fillet_shape(self):
         self.update_settings()
@@ -103,12 +180,14 @@ class FilletWorker:
             wx.LogWarning('Unable to Fillet, not shape selected.')
             return
 
-        if len(selected) == 1 and \
-                selected[0].GetShape() == pcbnew.SHAPE_T_RECT:
-            return self.do_rect_fillet(selected[0])
-        else:
-            wx.LogWarning('Unable to Fillet, not enough shapes selected.')
-            return
+        if len(selected) == 1:
+            if selected[0].GetShape() == pcbnew.SHAPE_T_RECT:
+                return self.do_rect_fillet(selected[0])
+            else:
+                wx.LogWarning('Unable to Fillet, not enough shapes selected.')
+                return
+
+        self.do_fillet(selected[0], selected[1])
 
     def cmd_split_shape(self):
         self.update_settings(check_value=False)
@@ -149,7 +228,7 @@ class FilletWorker:
         line_width = shape.GetWidth()
 
         # tmp storage shapes for fillet
-        self._tmp_split_shapes = []
+        self._tmp_split_shapes = {}
 
         if self.move_to_cut:
             layer = 44
@@ -169,9 +248,10 @@ class FilletWorker:
             s_seg.SetWidth(line_width)
 
             self.board.Add(s_seg)
-            self._tmp_split_shapes.append(s_seg)
+            self._tmp_split_shapes[idx] = s_seg
 
         if not self.keep_original:
+            shape.ClearSelected()
             self.board.Remove(shape)
             del shape
 
