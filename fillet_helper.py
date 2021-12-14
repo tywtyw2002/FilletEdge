@@ -89,6 +89,130 @@ class FilletWorker:
 
         a_reverse = 1
         b_reverse = 1
+        a_set = a.SetStart
+        b_set = b.SetStart
+        co_point = pcbnew.wxPoint(a_s.x, a_s.y)
+
+        if a_e == b_s or a_e == b_e:
+            co_point = pcbnew.wxPoint(a_e.x, a_e.y)
+            a_set = a.SetEnd
+            a_reverse = -1
+        elif a_s != b_s and a_s != b_e:
+            wx.LogWarning('Unable to Fillet, 2 lines not share any point.')
+            return
+
+        if b_e == co_point:
+            b_reverse = -1
+            b_set = b.SetEnd
+
+        a_v = pcbnew.VECTOR2I(
+            (a.GetEndX() - a.GetStartX()) * a_reverse,
+            -(a.GetEndY() - a.GetStartY()) * a_reverse
+        )
+        b_v = pcbnew.VECTOR2I(
+            (b.GetEndX() - b.GetStartX()) * b_reverse,
+            -(b.GetEndY() - b.GetStartY()) * b_reverse
+        )
+
+        # theta = a_v.Angle() * a_reverse - b_v.Angle() * b_reverse
+        theta = a_v.Angle() - b_v.Angle()
+
+        if theta < -math.pi:
+            theta += math.pi * 2
+        elif theta > math.pi:
+            theta -= math.pi * 2
+
+        deg = math.degrees(theta)
+
+        # wx.LogMessage(f"A:{a_s}, {a_e}, {a_v.Angle()}, {a_v.getWxPoint()}, {a_reverse}\n")
+        # wx.LogMessage(f"B:{b_s}, {b_e}, {b_v.Angle()}, {b_v.getWxPoint()}, {b_reverse}\n")
+        # wx.LogMessage(f"C:{co_point}, T: {theta} ({deg})\n")
+
+        offset = self.fillet_value
+        # y_offset = self.fillet_value
+        if int(deg) != 90 and int(deg) != -90:
+            # wx.LogMessage(str(deg))
+            offset = abs(offset * math.tan((math.pi - theta) / 2))
+
+        a_point = pcbnew.wxPoint(
+            int(co_point.x + offset * math.cos(a_v.Angle())),
+            int(co_point.y - offset * math.sin(a_v.Angle()))
+        )
+        b_point = pcbnew.wxPoint(
+            int(co_point.x + offset * math.cos(b_v.Angle())),
+            int(co_point.y - offset * math.sin(b_v.Angle()))
+        )
+
+        a_set(a_point)
+        b_set(b_point)
+
+        # set arc
+        s_arc = pcbnew.PCB_SHAPE()
+        s_arc.SetShape(pcbnew.SHAPE_T_ARC)
+
+        c_v = a_v.Resize(1000000) + b_v.Resize(1000000)
+        c_angle = c_v.Angle()
+        # wx.LogMessage(f"CT:{c_v.getWxPoint()}, T: {c_angle} ({math.degrees(c_angle)})\n")
+
+        if offset == self.fillet_value:
+            # 90 or -90
+            s_arc.SetCenter(pcbnew.wxPoint(
+                a_point.x + b_point.x - co_point.x,
+                a_point.y + b_point.y - co_point.y
+            ))
+        else:
+            coffset = abs(self.fillet_value / math.cos((math.pi - theta) / 2))
+            s_arc.SetCenter(pcbnew.wxPoint(
+                co_point.x + int(coffset * math.cos(c_angle)),
+                co_point.y - int(coffset * math.sin(c_angle))
+            ))
+
+        # if theta > 0 and a_reverse > 0 and b_reverse > 0:
+        #     s_arc.SetStart(a_point)
+        # else:
+        #     s_arc.SetStart(b_point)
+        # if theta > 0 and c_angle > 0:
+        # if deg >= 0 and a_reverse > 0 and b_reverse > 0:
+        if deg < 0:
+            s_arc.SetStart(a_point)
+        else:
+            s_arc.SetStart(b_point)
+
+        s_arc.SetArcAngleAndEnd(1800 - abs(deg * 10))
+
+        # if deg > 0:
+        #     s_arc.SetArcAngleAndEnd(deg * 10)
+        # else:
+        #     s_arc.SetArcAngleAndEnd(deg * 10, True)
+
+        s_arc.SetLayer(a.GetLayer())
+        s_arc.SetWidth(a.GetWidth())
+
+        if self.move_to_cut:
+            a.SetLayer(44)
+            a.SetWidth(150000)
+            b.SetLayer(44)
+            b.SetWidth(150000)
+            s_arc.SetLayer(44)
+            s_arc.SetWidth(150000)
+
+        self.board.Add(s_arc)
+
+        # pcbnew.Refresh()
+
+    def do_fillet2(self, a, b):
+        # must be cw rotate
+        # swap if ccw rotate
+        theta = 0
+
+        a_s = a.GetStart()
+        a_e = a.GetEnd()
+
+        b_s = b.GetStart()
+        b_e = b.GetEnd()
+
+        a_reverse = 1
+        b_reverse = 1
         a_set = a.SetEnd
         b_set = b.SetStart
         co_point = pcbnew.wxPoint(a_e.x, a_e.y)
