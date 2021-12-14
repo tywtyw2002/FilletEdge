@@ -146,6 +146,13 @@ class FilletWorker:
         a_set(a_point)
         b_set(b_point)
 
+        # check length
+        if a.GetLength() == 0:
+            self.board.Remove(a)
+
+        if b.GetLength() == 0:
+            self.board.Remove(b)
+
         # set arc
         s_arc = pcbnew.PCB_SHAPE()
         s_arc.SetShape(pcbnew.SHAPE_T_ARC)
@@ -528,6 +535,7 @@ class FilletHelper(pcbnew.ActionPlugin):
         worker = FilletWorker(gui, board)
 
         gui.init_binds(worker)
+        gui.ToggleWindowStyle(wx.STAY_ON_TOP)
         gui.Show()
 
         # for l in range(pcbnew.PCB_LAYER_ID_COUNT):
