@@ -33,6 +33,9 @@ ___version___ = "1.2.4"
 UNIX_CONV = 1000000
 
 
+# logger = open('log.log', 'a+')
+
+
 class FilletWorker:
 
     def __init__(self, gui, board):
@@ -94,6 +97,9 @@ class FilletWorker:
             co_point = pcbnew.wxPoint(a_s.x, a_s.y)
             a_set = a.SetStart
             a_reverse = -1
+        elif a_e != b_s and a_e != b_e:
+            wx.LogWarning('Unable to Fillet, 2 lines not share any point.')
+            return
 
         if b_e == co_point:
             b_reverse = -1
@@ -101,32 +107,82 @@ class FilletWorker:
 
         a_v = pcbnew.VECTOR2I(
             a.GetEndX() - a.GetStartX(),
-            a.GetEndY() - a.GetStartY()
+            -(a.GetEndY() - a.GetStartY())
         )
         b_v = pcbnew.VECTOR2I(
             b.GetEndX() - b.GetStartX(),
-            b.GetEndY() - b.GetStartY()
+            -(b.GetEndY() - b.GetStartY())
         )
 
         theta = a_v.Angle() * a_reverse - b_v.Angle() * b_reverse
 
-        x_offset = self.fillet_value
-        y_offset = self.fillet_value
+        if theta < -math.pi:
+            theta += math.pi * 2
+        elif theta > math.pi:
+            theta -= math.pi * 2
 
-        # deg = math.degrees(theta)
-        # if int(deg) != 90 and int(deg) != -90:
-        #     wx.LogMessage(str(deg))
-        #     x_offset = x_offset / math.tan((math.pi - theta) / 2)
+        deg = math.degrees(theta)
 
-        a_set(pcbnew.wxPoint(
-            int(co_point.x - x_offset * math.cos(a_v.Angle()) * a_reverse),
-            int(co_point.y - y_offset * math.sin(a_v.Angle()) * a_reverse)
-        ))
+        wx.LogMessage(f"A:{a_s}, {a_e}, {a_reverse}\n")
+        wx.LogMessage(f"B:{b_s}, {b_e}, {b_reverse}\n")
+        wx.LogMessage(f"C:{co_point}, T: {theta} ({deg})\n")
 
-        b_set(pcbnew.wxPoint(
-            int(co_point.x + x_offset * math.cos(b_v.Angle()) * b_reverse),
-            int(co_point.y + y_offset * math.sin(b_v.Angle()) * b_reverse)
-        ))
+        offset = self.fillet_value
+        # y_offset = self.fillet_value
+        if int(deg) != 90 and int(deg) != -90:
+            # wx.LogMessage(str(deg))
+            offset = abs(offset / math.tan((math.pi - theta) / 2))
+
+        a_point = pcbnew.wxPoint(
+            int(co_point.x - offset * math.cos(a_v.Angle()) * a_reverse),
+            int(co_point.y + offset * math.sin(a_v.Angle()) * a_reverse)
+        )
+        b_point = pcbnew.wxPoint(
+            int(co_point.x + offset * math.cos(b_v.Angle()) * b_reverse),
+            int(co_point.y - offset * math.sin(b_v.Angle()) * b_reverse)
+        )
+
+        a_set(a_point)
+        b_set(b_point)
+
+        # set arc
+        s_arc = pcbnew.PCB_SHAPE()
+        s_arc.SetShape(pcbnew.SHAPE_T_ARC)
+
+        if offset == self.fillet_value:
+            # 90 or -90
+            s_arc.SetCenter(pcbnew.wxPoint(
+                a_point.x + b_point.x - co_point.x,
+                a_point.y + b_point.y - co_point.y
+            ))
+        else:
+            s_arc.SetCenter(pcbnew.wxPoint(
+                co_point.x - math.cos(a_v.Angle()) * offset,
+                co_point.y + self.fillet_value * math.sin(a_v.Angle())
+            ))
+
+        if theta > 0 and a_reverse > 0 and b_reverse > 0:
+            s_arc.SetStart(a_point)
+        else:
+            s_arc.SetStart(b_point)
+
+        if deg > 0:
+            s_arc.SetArcAngleAndEnd(deg * 10)
+        else:
+            s_arc.SetArcAngleAndEnd(deg * 10, True)
+
+        s_arc.SetLayer(a.GetLayer())
+        s_arc.SetWidth(a.GetWidth())
+
+        if self.move_to_cut:
+            a.SetLayer(44)
+            a.SetWidth(150000)
+            b.SetLayer(44)
+            b.SetWidth(150000)
+            s_arc.SetLayer(44)
+            s_arc.SetWidth(150000)
+
+        self.board.Add(s_arc)
 
         # pcbnew.Refresh()
 
@@ -167,7 +223,9 @@ class FilletWorker:
 
         for idx in range(4):
             a = segs[idx]
-            b = segs[(idx + idx) % 4]
+            b = segs[(idx + 1) % 4]
+            # wx.LogMessage(f"{idx}, A:{a}, B: {b}\n")
+            # wx.LogMessage(f"{idx}\n")
             self.do_fillet(a, b)
 
         pcbnew.Refresh()
@@ -188,6 +246,7 @@ class FilletWorker:
                 return
 
         self.do_fillet(selected[0], selected[1])
+        pcbnew.Refresh()
 
     def cmd_split_shape(self):
         self.update_settings(check_value=False)
@@ -198,9 +257,9 @@ class FilletWorker:
         for shape in selected:
             if shape.GetShape() == pcbnew.SHAPE_T_RECT:
                 ret = self.split_shape_rect(shape)
-                c += 0
+                c += 1
                 if ret == wx.ID_OK:
-                    sc += 0
+                    sc += 1
 
         pcbnew.Refresh()
 
@@ -249,6 +308,7 @@ class FilletWorker:
 
             self.board.Add(s_seg)
             self._tmp_split_shapes[idx] = s_seg
+            # wx.LogMessage(f"{idx}, {s_seg}\n")
 
         if not self.keep_original:
             shape.ClearSelected()
@@ -256,24 +316,6 @@ class FilletWorker:
             del shape
 
         return wx.ID_OK
-
-
-def MoveToLayer(pcb, layerId):
-    found_selected = False
-    for drw in pcb.GetDrawings():
-        if drw.IsSelected():
-            drw.SetLayer(layerId)
-            found_selected = True
-
-    if found_selected != True:
-        LogMsg = "select drawings to be moved to new layer\n"
-        LogMsg += "use GAL for selecting lines"
-        wx.LogMessage(LogMsg)
-    else:
-        pcbnew.Refresh()
-        layerName = pcbnew.GetBoard().GetLayerName(layerId)
-        LogMsg = "selected drawings moved to "+layerName+" layer"
-        wx.LogMessage(LogMsg)
 
 
 def find_pcbnew_w():
