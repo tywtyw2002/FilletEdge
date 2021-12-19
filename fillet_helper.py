@@ -1,39 +1,13 @@
-#  move_to_edge_cuts.py
-#
-# Copyright (C) 2017 KiCad Developers, see CHANGELOG.TXT for contributors.
-#
-#  This program is free software; you can redistribute it and/or modify
-#  it under the terms of the GNU General Public License as published by
-#  the Free Software Foundation; either version 2 of the License, or
-#  (at your option) any later version.
-#
-#  This program is distributed in the hope that it will be useful,
-#  but WITHOUT ANY WARRANTY; without even the implied warranty of
-#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-#  GNU General Public License for more details.
-#
-#  You should have received a copy of the GNU General Public License
-#  along with this program; if not, write to the Free Software
-#  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston,
-#  MA 02110-1301, USA.
-#
-#
-
 from .fillet_ui import FilletHelperDialog
 import wx
 import pcbnew
 from pcbnew import *
 import math
-# import base64
-# from wx.lib.embeddedimage import PyEmbeddedImage
-# import os
+
 ___version___ = "1.2.4"
 
 
 UNIX_CONV = 1000000
-
-
-# logger = open('log.log', 'a+')
 
 
 class FilletWorker:
@@ -206,116 +180,97 @@ class FilletWorker:
         self.board.Add(s_arc)
 
         # pcbnew.Refresh()
+    def calc_orientation(self, p, q, r):
+        # https://www.geeksforgeeks.org/orientation-3-ordered-points/amp/
+        val = ((q.y - p.y) * (r.x - q.x)) - ((q.x - p.x) * (r.y - q.y))
+        if val > 0:
+            return 1
+        elif val < 0:
+            return 2
+        else:
+            return 0
 
-    def do_fillet2(self, a, b):
-        # must be cw rotate
-        # swap if ccw rotate
-        theta = 0
-
+    def do_line_break(self, a, b):
+        # check 2 lines co-point
         a_s = a.GetStart()
         a_e = a.GetEnd()
-
         b_s = b.GetStart()
         b_e = b.GetEnd()
 
-        a_reverse = 1
-        b_reverse = 1
-        a_set = a.SetEnd
-        b_set = b.SetStart
-        co_point = pcbnew.wxPoint(a_e.x, a_e.y)
-
         if a_s == b_s or a_s == b_e:
-            co_point = pcbnew.wxPoint(a_s.x, a_s.y)
-            a_set = a.SetStart
-            a_reverse = -1
-        elif a_e != b_s and a_e != b_e:
-            wx.LogWarning('Unable to Fillet, 2 lines not share any point.')
+            wx.LogWarning('Unable to Break\n Two lines are co-point.')
             return
 
-        if b_e == co_point:
-            b_reverse = -1
-            b_set = b.SetEnd
-
-        a_v = pcbnew.VECTOR2I(
-            a.GetEndX() - a.GetStartX(),
-            -(a.GetEndY() - a.GetStartY())
-        )
-        b_v = pcbnew.VECTOR2I(
-            b.GetEndX() - b.GetStartX(),
-            -(b.GetEndY() - b.GetStartY())
-        )
-
-        theta = a_v.Angle() * a_reverse - b_v.Angle() * b_reverse
-
-        if theta < -math.pi:
-            theta += math.pi * 2
-        elif theta > math.pi:
-            theta -= math.pi * 2
-
-        deg = math.degrees(theta)
-
-        wx.LogMessage(f"A:{a_s}, {a_e}, {a_reverse}\n")
-        wx.LogMessage(f"B:{b_s}, {b_e}, {b_reverse}\n")
-        wx.LogMessage(f"C:{co_point}, T: {theta} ({deg})\n")
-
-        offset = self.fillet_value
-        # y_offset = self.fillet_value
-        if int(deg) != 90 and int(deg) != -90:
-            # wx.LogMessage(str(deg))
-            offset = abs(offset / math.tan((math.pi - theta) / 2))
-
-        a_point = pcbnew.wxPoint(
-            int(co_point.x - offset * math.cos(a_v.Angle()) * a_reverse),
-            int(co_point.y + offset * math.sin(a_v.Angle()) * a_reverse)
-        )
-        b_point = pcbnew.wxPoint(
-            int(co_point.x + offset * math.cos(b_v.Angle()) * b_reverse),
-            int(co_point.y - offset * math.sin(b_v.Angle()) * b_reverse)
-        )
-
-        a_set(a_point)
-        b_set(b_point)
-
-        # set arc
-        s_arc = pcbnew.PCB_SHAPE()
-        s_arc.SetShape(pcbnew.SHAPE_T_ARC)
-
-        if offset == self.fillet_value:
-            # 90 or -90
-            s_arc.SetCenter(pcbnew.wxPoint(
-                a_point.x + b_point.x - co_point.x,
-                a_point.y + b_point.y - co_point.y
-            ))
+        # check 2 lines parallel.
+        a_dt = a_e.x - a_s.x
+        if a_dt == 0:
+            slope_a = None
         else:
-            s_arc.SetCenter(pcbnew.wxPoint(
-                co_point.x - math.cos(a_v.Angle()) * offset,
-                co_point.y + self.fillet_value * math.sin(a_v.Angle())
-            ))
+            slope_a = abs((a_e.y - a_s.y) / a_dt)
 
-        if theta > 0 and a_reverse > 0 and b_reverse > 0:
-            s_arc.SetStart(a_point)
+        b_dt = b_e.x - b_s.x
+        if b_dt == 0:
+            slope_b = None
         else:
-            s_arc.SetStart(b_point)
+            slope_b = abs((b_e.y - b_s.y) / b_dt)
+        # slope_b = (b.GetEndY() - b.GetStartY()) / (b.GetEndX() - b.GetStartX())
 
-        if deg > 0:
-            s_arc.SetArcAngleAndEnd(deg * 10)
-        else:
-            s_arc.SetArcAngleAndEnd(deg * 10, True)
+        if slope_a == slope_b:
+            wx.LogWarning('Unable to Break\n Two lines are parallel.')
+            return
 
-        s_arc.SetLayer(a.GetLayer())
-        s_arc.SetWidth(a.GetWidth())
+        ao1 = self.calc_orientation(a_s, a_e, b_s)
+        ao2 = self.calc_orientation(a_s, a_e, b_e)
+        bo1 = self.calc_orientation(b_s, b_e, a_s)
+        bo2 = self.calc_orientation(b_s, b_e, a_e)
+
+        if ao1 == ao2 or bo1 == bo2:
+            wx.LogWarning('Unable to Break\n Two lines are not intersect.')
+            return
+
+        # Get Intersect Point
+        t_u = (a_s.x - b_s.x) * (b_s.y - b_e.y) - (a_s.y - b_s.y) * (b_s.x - b_e.x)
+        t_d = (a_s.x - a_e.x) * (b_s.y - b_e.y) - (a_s.y - a_e.y) * (b_s.x - b_e.x)
+        t = t_u / t_d
+
+        # u_u = (a_s.x - b_s.x) * (a_s.y - a_e.y) - (a_s.y - b_s.y) * (a_s.x - a_e.x)
+        # u_d = (a_s.x - a_e.x) * (b_s.y - b_e.y) - (a_s.y - a_e.y) * (b_s.x - b_e.x)
+        # u = u_u / u_d
+
+        x = a_s.x + t * (a_e.x - a_s.x)
+        y = a_s.y + t * (a_e.y - a_s.y)
+
+        c = pcbnew.wxPoint(int(x), int(y))
+        wx.LogMessage(f"{c}\n")
+        # do break
+        self._do_lint_break(a, c)
+        self._do_lint_break(b, c)
+
+    def _do_lint_break(self, line, c):
+        start = line.GetStart()
+        end = line.GetEnd()
+        end_copy = pcbnew.wxPoint(end.x, end.y)
+
+        layer = line.GetLayer()
+        width = line.GetWidth()
 
         if self.move_to_cut:
-            a.SetLayer(44)
-            a.SetWidth(150000)
-            b.SetLayer(44)
-            b.SetWidth(150000)
-            s_arc.SetLayer(44)
-            s_arc.SetWidth(150000)
+            line.SetLayer(44)
+            line.SetWidth(150000)
+            layer = 44
+            width = 150000
 
-        self.board.Add(s_arc)
+        if start != c and end != c:
+            line.SetEnd(c)
 
-        # pcbnew.Refresh()
+            new_line = pcbnew.PCB_SHAPE()
+            new_line.SetShape(pcbnew.SHAPE_T_SEGMENT)
+            new_line.SetLayer(layer)
+            new_line.SetWidth(width)
+
+            new_line.SetStart(c)
+            new_line.SetEnd(end_copy)
+            self.board.Add(new_line)
 
     def do_simple_fillet(self, a, b):
         # Simple Fillet at 90 degree
@@ -377,6 +332,21 @@ class FilletWorker:
                 return
 
         self.do_fillet(selected[0], selected[1])
+        pcbnew.Refresh()
+
+    def cmd_break_line(self):
+        self.update_settings(check_value=False)
+        selected = self.get_select_shape()
+
+        if not selected:
+            wx.LogWarning('Unable to Break, no line selected.')
+            return
+
+        if len(selected) != 2:
+            wx.LogWarning('Unable to Break\n Need two lines to break.')
+            return
+
+        self.do_line_break(selected[0], selected[1])
         pcbnew.Refresh()
 
     def cmd_split_shape(self):
@@ -480,6 +450,11 @@ class kicadFilletHelperDialog(FilletHelperDialog):
         self.btn_fillet.Bind(
             wx.EVT_BUTTON,
             lambda e: worker.cmd_fillet_shape()
+        )
+
+        self.btn_break.Bind(
+            wx.EVT_BUTTON,
+            lambda e: worker.cmd_break_line()
         )
     # def __init__(self,  parent):
     #     import wx

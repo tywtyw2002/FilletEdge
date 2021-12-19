@@ -89,6 +89,10 @@ class FilletHelperDialog(wx.Dialog):
         self.btn_split.SetMinSize((100, 30))
         sizer_2.Add(self.btn_split, 0, wx.ALIGN_CENTER_HORIZONTAL, 0)
 
+        self.btn_break = wx.Button(self.panel_1, wx.ID_ANY, "Break Line")
+        self.btn_break.SetMinSize((100, 30))
+        sizer_2.Add(self.btn_break, 0, wx.ALIGN_CENTER_HORIZONTAL, 0)
+
         self.btn_unselect = wx.Button(self.panel_1, wx.ID_ANY, "Unselect All")
         self.btn_unselect.SetMinSize((100, 30))
         sizer_2.Add(self.btn_unselect, 0, wx.ALIGN_CENTER_HORIZONTAL, 0)
