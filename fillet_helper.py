@@ -4,7 +4,7 @@ import pcbnew
 from pcbnew import *
 import math
 
-___version___ = "1.2.4"
+___version___ = "1.0"
 
 
 UNIX_CONV = 1000000
@@ -39,7 +39,17 @@ class FilletWorker:
 
         # calc value w/ units
         unit = self.gui.select_unit.GetStringSelection().upper()
-        self.fillet_value = 1000000 * fillet_value
+        if unit == 'MM':
+            fillet_value = pcbnew.FromMM(fillet_value)
+        elif unit == 'INCH':
+            fillet_value = pcbnew.FromMils(fillet_value / 1000)
+        elif unit == 'mil':
+            fillet_value = pcbnew.FromMils(fillet_value)
+        else:
+            wx.LogWarning('Invalid Fillet Units.')
+            raise
+
+        self.fillet_value = fillet_value
 
     def get_select_shape(self):
         selected = []
@@ -241,7 +251,7 @@ class FilletWorker:
         y = a_s.y + t * (a_e.y - a_s.y)
 
         c = pcbnew.wxPoint(int(x), int(y))
-        wx.LogMessage(f"{c}\n")
+        # wx.LogMessage(f"{c}\n")
         # do break
         self._do_lint_break(a, c)
         self._do_lint_break(b, c)
@@ -456,28 +466,9 @@ class kicadFilletHelperDialog(FilletHelperDialog):
             wx.EVT_BUTTON,
             lambda e: worker.cmd_break_line()
         )
-    # def __init__(self,  parent):
-    #     import wx
-    #     FilletHelperDialog.__init__(self, parent)
-    #     # self.GetSizer().Fit(self)
-    #     self.SetMinSize(self.GetSize())
-
-    #     self.m_bitmapLayers.SetBitmap(wx.Bitmap(os.path.join(
-    #         os.path.dirname(__file__), "./add_polygon.png")))
-    #     self.m_bitmapDwgs.SetBitmap(wx.Bitmap(os.path.join(
-    #         os.path.dirname(__file__), "./move2layer.png")))
 
 
 class FilletHelper(pcbnew.ActionPlugin):
-    """
-    A script to Move Selected Drawing(s) to chosen new Layer (available only in GAL)
-    How to use:
-    - move to GAL
-    - select some draw objects
-    - call the plugin
-    - select the new layer
-    - selected draw objects will be moved to new layer
-    """
 
     def defaults(self):
         """
@@ -498,11 +489,6 @@ class FilletHelper(pcbnew.ActionPlugin):
         self.show_toolbar_button = True
 
     def Run(self):
-        # found_selected = False
-
-        # board = pcbnew.GetBoard()
-        # fileName = GetBoard().GetFileName()
-
         pcbnew_window = find_pcbnew_w()
         gui = kicadFilletHelperDialog(pcbnew_window)
 
@@ -513,23 +499,3 @@ class FilletHelper(pcbnew.ActionPlugin):
         gui.ToggleWindowStyle(wx.STAY_ON_TOP)
         gui.Show()
 
-        # for l in range(pcbnew.PCB_LAYER_ID_COUNT):
-        #     aParameters.m_comboBoxLayer.Append(
-        #         pcbnew.GetBoard().GetLayerName(l))
-        # aParameters.m_comboBoxLayer.Select(44)
-        # modal_result = aParameters.ShowModal()
-        # if modal_result == wx.ID_OK:
-        #     LayerName = aParameters.m_comboBoxLayer.GetStringSelection()
-        #     LayerIndex = aParameters.m_comboBoxLayer.FindString(LayerName)
-        #     LayerStdName = pcbnew.BOARD_GetStandardLayerName(LayerIndex)
-        #     # wx.LogMessage(LayerName+';'+str(LayerIndex)+';'+LayerStdName)
-        #     MoveToLayer(board, LayerIndex)
-        # else:
-        #     None  # Cancel
-
-        # LogMsg = ''
-        # msg = "'move to layer tool'\n"
-        # msg += "version = "+___version___
-
-
-# move_to_draw_layer().register()
