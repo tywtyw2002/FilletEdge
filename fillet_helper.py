@@ -146,10 +146,10 @@ class FilletWorker:
 
         # check length
         if a.GetLength() == 0:
-            self.board.Remove(a)
+            self.board.RemoveNative(a)
 
         if b.GetLength() == 0:
-            self.board.Remove(b)
+            self.board.RemoveNative(b)
 
         # set arc
         s_arc = pcbnew.PCB_SHAPE()
@@ -437,8 +437,8 @@ class FilletWorker:
             # wx.LogMessage(f"{idx}, {s_seg}\n")
 
         if not self.keep_original:
-            # shape.ClearSelected()
-            self.board.Remove(shape)
+            shape.ClearSelected()
+            self.board.RemoveNative(shape)
             del shape
 
         return wx.ID_OK
