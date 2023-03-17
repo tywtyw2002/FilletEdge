@@ -51,6 +51,7 @@ class FilletHelperDialog(wx.Dialog):
         sizer_9.Add(label_2, 0, wx.ALIGN_CENTER_VERTICAL, 0)
 
         self.txt_fillet_value = wx.TextCtrl(self.panel_1, wx.ID_ANY, "")
+        self.txt_fillet_value.SetMinSize((80, 25))
         sizer_9.Add(self.txt_fillet_value, 0, wx.ALIGN_CENTER_VERTICAL, 0)
 
         sizer_5 = wx.StaticBoxSizer(wx.StaticBox(self.panel_1, wx.ID_ANY, "Options"), wx.VERTICAL)

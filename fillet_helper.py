@@ -1,13 +1,21 @@
 from .fillet_ui import FilletHelperDialog
 import wx
 import pcbnew
-from pcbnew import *
+# from pcbnew import *
 import math
 
 ___version___ = "1.0"
 
 
 UNIX_CONV = 1000000
+
+
+def get_angle(v):
+    return math.atan2(v.y, v.x)
+
+
+def from_degree(angle):
+     return pcbnew.EDA_ANGLE(angle, pcbnew.DEGREES_T)
 
 
 class FilletWorker:
@@ -60,6 +68,11 @@ class FilletWorker:
 
         return selected
 
+    def deselect_all(self):
+        for ele in self.board.GetDrawings():
+            if ele.IsSelected() and isinstance(ele, pcbnew.PCB_SHAPE):
+                ele.ClearSelected()
+
     def do_fillet(self, a, b):
         # must be cw rotate
         # swap if ccw rotate
@@ -99,7 +112,8 @@ class FilletWorker:
         )
 
         # theta = a_v.Angle() * a_reverse - b_v.Angle() * b_reverse
-        theta = a_v.Angle() - b_v.Angle()
+        # theta = a_v.Angle() - b_v.Angle()
+        theta = get_angle(a_v) - get_angle(b_v)
 
         if theta < -math.pi:
             theta += math.pi * 2
@@ -119,16 +133,16 @@ class FilletWorker:
             offset = abs(offset * math.tan((math.pi - theta) / 2))
 
         a_point = pcbnew.wxPoint(
-            int(co_point.x + offset * math.cos(a_v.Angle())),
-            int(co_point.y - offset * math.sin(a_v.Angle()))
+            int(co_point.x + offset * math.cos(get_angle(a_v))),
+            int(co_point.y - offset * math.sin(get_angle(a_v)))
         )
         b_point = pcbnew.wxPoint(
-            int(co_point.x + offset * math.cos(b_v.Angle())),
-            int(co_point.y - offset * math.sin(b_v.Angle()))
+            int(co_point.x + offset * math.cos(get_angle(b_v))),
+            int(co_point.y - offset * math.sin(get_angle(b_v)))
         )
 
-        a_set(a_point)
-        b_set(b_point)
+        a_set(pcbnew.VECTOR2I(a_point))
+        b_set(pcbnew.VECTOR2I(b_point))
 
         # check length
         if a.GetLength() == 0:
@@ -142,18 +156,18 @@ class FilletWorker:
         s_arc.SetShape(pcbnew.SHAPE_T_ARC)
 
         c_v = a_v.Resize(1000000) + b_v.Resize(1000000)
-        c_angle = c_v.Angle()
+        c_angle = get_angle(c_v)
         # wx.LogMessage(f"CT:{c_v.getWxPoint()}, T: {c_angle} ({math.degrees(c_angle)})\n")
 
         if offset == self.fillet_value:
             # 90 or -90
-            s_arc.SetCenter(pcbnew.wxPoint(
+            s_arc.SetCenter(pcbnew.VECTOR2I(
                 a_point.x + b_point.x - co_point.x,
                 a_point.y + b_point.y - co_point.y
             ))
         else:
             coffset = abs(self.fillet_value / math.cos((math.pi - theta) / 2))
-            s_arc.SetCenter(pcbnew.wxPoint(
+            s_arc.SetCenter(pcbnew.VECTOR2I(
                 co_point.x + int(coffset * math.cos(c_angle)),
                 co_point.y - int(coffset * math.sin(c_angle))
             ))
@@ -165,11 +179,11 @@ class FilletWorker:
         # if theta > 0 and c_angle > 0:
         # if deg >= 0 and a_reverse > 0 and b_reverse > 0:
         if deg < 0:
-            s_arc.SetStart(a_point)
+            s_arc.SetStart(pcbnew.VECTOR2I(a_point))
         else:
-            s_arc.SetStart(b_point)
+            s_arc.SetStart(pcbnew.VECTOR2I(b_point))
 
-        s_arc.SetArcAngleAndEnd(1800 - abs(deg * 10))
+        s_arc.SetArcAngleAndEnd(from_degree(180 - abs(deg)))
 
         # if deg > 0:
         #     s_arc.SetArcAngleAndEnd(deg * 10)
@@ -250,7 +264,8 @@ class FilletWorker:
         x = a_s.x + t * (a_e.x - a_s.x)
         y = a_s.y + t * (a_e.y - a_s.y)
 
-        c = pcbnew.wxPoint(int(x), int(y))
+        # c = pcbnew.wxPoint(int(x), int(y))
+        c = pcbnew.VECTOR2I(int(x), int(y))
         # wx.LogMessage(f"{c}\n")
         # do break
         self._do_lint_break(a, c)
@@ -259,7 +274,7 @@ class FilletWorker:
     def _do_lint_break(self, line, c):
         start = line.GetStart()
         end = line.GetEnd()
-        end_copy = pcbnew.wxPoint(end.x, end.y)
+        end_copy = pcbnew.VECTOR2I(end.x, end.y)
 
         layer = line.GetLayer()
         width = line.GetWidth()
@@ -362,6 +377,7 @@ class FilletWorker:
     def cmd_split_shape(self):
         self.update_settings(check_value=False)
         selected = self.get_select_shape()
+        tc = len(selected)
         c = 0
         sc = 0
 
@@ -374,7 +390,6 @@ class FilletWorker:
 
         pcbnew.Refresh()
 
-        tc = len(selected)
         if c == sc and c == tc:
             # wx.LogMessage('All Selected Shape are splited.')
             return
@@ -422,7 +437,7 @@ class FilletWorker:
             # wx.LogMessage(f"{idx}, {s_seg}\n")
 
         if not self.keep_original:
-            shape.ClearSelected()
+            # shape.ClearSelected()
             self.board.Remove(shape)
             del shape
 
@@ -466,6 +481,12 @@ class kicadFilletHelperDialog(FilletHelperDialog):
             wx.EVT_BUTTON,
             lambda e: worker.cmd_break_line()
         )
+
+        self.btn_unselect.Bind(
+            wx.EVT_BUTTON,
+            lambda e: worker.deselect_all()
+        )
+
 
 
 class FilletHelper(pcbnew.ActionPlugin):
