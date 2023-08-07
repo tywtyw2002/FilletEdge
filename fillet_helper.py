@@ -63,14 +63,14 @@ class FilletWorker:
         selected = []
 
         for ele in self.board.GetDrawings():
-            if ele.IsSelected() and isinstance(ele, pcbnew.PCB_SHAPE):
+            if ele.IsSelected() and ele.GetClass() == "PCB_SHAPE":
                 selected.append(ele)
 
         return selected
 
     def deselect_all(self):
         for ele in self.board.GetDrawings():
-            if ele.IsSelected() and isinstance(ele, pcbnew.PCB_SHAPE):
+            if ele.IsSelected() and ele.GetClass() == "PCB_SHAPE":
                 ele.ClearSelected()
 
     def do_fillet(self, a, b):
